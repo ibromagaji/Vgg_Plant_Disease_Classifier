@@ -142,12 +142,12 @@ async def predict(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Inference failed: {e}")
 
-    disease_name = idx_class[str[str(prediction)]]
+    disease_name = idx_class[str(prediction)]
 
     try:
 
         # Replace with your actual Gemini API key
-        GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
+        #GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
 
         # The standard REST endpoint format for Gemini
         url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={GEMINI_API_KEY}"
