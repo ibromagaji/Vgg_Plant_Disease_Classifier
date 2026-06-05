@@ -4,7 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from functools import lru_cache
 import torchvision 
-from torchvison import models
+from torchvision import models
 import boto3
 import torch
 import torch.nn as nn
