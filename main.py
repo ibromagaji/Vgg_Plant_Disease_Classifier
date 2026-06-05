@@ -4,8 +4,10 @@ import logging
 from contextlib import asynccontextmanager
 from functools import lru_cache
 import torchvision 
+from torchvison import models
 import boto3
 import torch
+import torch.nn as nn
 import torchvision.transforms as transforms
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
@@ -13,6 +15,7 @@ from PIL import Image
 from torchvision import models
 import json
 import httpx 
+
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -61,7 +64,13 @@ def load_model_from_s3():
         s3_client.download_file(S3_BUCKET_NAME, S3_MODEL_KEY, LOCAL_MODEL_PATH)
         print("Download complete. Loading model...")
 
-        model = models.alexnet(weights=None,num_classes = 29)
+        
+        model = models.vgg16(weights=None)  # no pretrained weights since you're loading your own
+        in_features = model.classifier[6].in_features
+        model.classifier[6] = nn.Sequential(
+            nn.Dropout(0.5),  # use same dropout value from your best sweep run
+            nn.Linear(in_features, 29)
+        )
 
         state_dict = torch.load(LOCAL_MODEL_PATH, map_location=DEVICE)
         model.load_state_dict(state_dict)
@@ -83,7 +92,7 @@ def load_model_from_s3():
     except Exception as e:
         print(f'ERROR:Could not download class names: {e}')
         idx_class = None
-        
+
 
 
 @asynccontextmanager
@@ -144,63 +153,63 @@ async def predict(file: UploadFile = File(...)):
 
     disease_name = idx_class[str(prediction)]
 
-    try:
+    # try:
 
-        # Replace with your actual Gemini API key
-        #GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
+    #     # Replace with your actual Gemini API key
+    #     #GEMINI_API_KEY = "YOUR_GEMINI_API_KEY"
 
-        # The standard REST endpoint format for Gemini
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={GEMINI_API_KEY}"
+    #     # The standard REST endpoint format for Gemini
+    #     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={GEMINI_API_KEY}"
 
-        async with httpx.AsyncClient() as client:
-            llm_resp = await client.post(
-                url,
-                headers={
-                    "Content-Type": "application/json"
-                },
-                json={
-                "systemInstruction": {
-                    "parts": [
-                        {"text":f"""You are a plant pathology expert. The disease identified is: "{disease_name}"
+    #     async with httpx.AsyncClient() as client:
+    #         llm_resp = await client.post(
+    #             url,
+    #             headers={
+    #                 "Content-Type": "application/json"
+    #             },
+    #             json={
+    #             "systemInstruction": {
+    #                 "parts": [
+    #                     {"text":f"""You are a plant pathology expert. The disease identified is: "{disease_name}"
 
-                            Return ONLY a valid JSON object with exactly these keys, nothing else:
-                            {{
-                            "description": "<2-3 sentence overview>",
-                            "symptoms":    ["<s1>", "<s2>", "<s3>", "<s4>"],
-                            "treatment":   ["<t1>", "<t2>", "<t3>", "<t4>"],
-                            "prevention":  ["<p1>", "<p2>", "<p3>", "<p4>"]
-                            }}
-                            No markdown, no backticks. Raw JSON only."""
-                            }
-                    ]
-                    },
-                "contents": [
-                    {
-                    "parts": [
-                        {"text": disease_name}
-                    ]
-                    }
-                ],
-                "generationConfig": {
-                    "maxOutputTokens": 800,
-                    "responseMimeType": "application/json" # Forces clean JSON output
-                    }
-                },
-                timeout=15.0
-            )
+    #                         Return ONLY a valid JSON object with exactly these keys, nothing else:
+    #                         {{
+    #                         "description": "<2-3 sentence overview>",
+    #                         "symptoms":    ["<s1>", "<s2>", "<s3>", "<s4>"],
+    #                         "treatment":   ["<t1>", "<t2>", "<t3>", "<t4>"],
+    #                         "prevention":  ["<p1>", "<p2>", "<p3>", "<p4>"]
+    #                         }}
+    #                         No markdown, no backticks. Raw JSON only."""
+    #                         }
+    #                 ]
+    #                 },
+    #             "contents": [
+    #                 {
+    #                 "parts": [
+    #                     {"text": disease_name}
+    #                 ]
+    #                 }
+    #             ],
+    #             "generationConfig": {
+    #                 "maxOutputTokens": 800,
+    #                 "responseMimeType": "application/json" # Forces clean JSON output
+    #                 }
+    #             },
+    #             timeout=15.0
+    #         )
 
-        # Parsing the response directly
-        resp_json = llm_resp.json()
-        raw = resp_json["candidates"][0]["content"]["parts"][0]["text"].strip()
+    #     # Parsing the response directly
+    #     resp_json = llm_resp.json()
+    #     raw = resp_json["candidates"][0]["content"]["parts"][0]["text"].strip()
 
-        # No more backtick stripping needed! You can load it safely right away:
-        info = json.loads(raw)
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Could not decode image: {e}")
+    #     # No more backtick stripping needed! You can load it safely right away:
+    #     info = json.loads(raw)
+    # except Exception as e:
+    #     raise HTTPException(status_code=400, detail=f"Could not decode image: {e}")
 
     return {"prediction": disease_name,
-            'disease_info':info
-            }
+            #'disease_info':info
+        }
 
 
 
