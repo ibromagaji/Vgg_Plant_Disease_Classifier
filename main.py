@@ -15,6 +15,8 @@ from PIL import Image
 from torchvision import models
 import json
 import httpx 
+from google import genai
+from google.genai import types
 
 
 logging.basicConfig(level=logging.INFO)
@@ -35,7 +37,8 @@ S3_CLASSNAME_FILE = '/class_names'
 LOCAL_CLASSNAME_FILE = '/tmp/class_names'
 
 
-GEMINI_API_KEY = os.getenv('gemini_api')
+
+client = genai.Client()
 
 
 DEVICE  = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -53,7 +56,38 @@ def download_classnames():
     s3.download_file(S3_BUCKET_CLASSNAMES_NAME,S3_CLASSNAME_FILE,LOCAL_CLASSNAME_FILE)
     
                       
+def get_plant_disease_info(disease_name: str):
+    # 1. Define your dynamic system prompt matching the screenshot intent
+    system_prompt = f"""You are a plant pathology expert. The disease identified is: {disease_name}
 
+Return ONLY a valid JSON object with exactly these keys, nothing else:
+{{
+"description": "<2-3 sentence overview>",
+"symptoms":   ["<s1>", "<s2>", "<s3>", "<s4>"],
+"treatment":  ["<t1>", "<t2>", "<t3>", "<t4>"],
+"prevention": ["<p1>", "<p2>", "<p3>", "<p4>"]
+}}
+No markdown, no backticks. Raw JSON only."""
+
+    # 2. Configure the generation settings (Max tokens & Mime type)
+    config = types.GenerateContentConfig(
+        system_instruction=system_prompt,
+        max_output_tokens=800,
+        response_mime_type="application/json"  # Forces clean JSON output natively
+    )
+
+    # 3. Execute the call
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=disease_name,
+        config=config
+    )
+    
+    return response.text
+
+# Example Usage:
+#json_output = get_plant_disease_info("Tomato Late Blight")
+#print(json_output)
 
 def load_model_from_s3():
     """Downloads model from S3 and loads it into the global variable."""
@@ -152,6 +186,7 @@ async def predict(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=f"Inference failed: {e}")
 
     disease_name = idx_class[str(prediction)]
+    info = get_plant_disease_info(disease_name)
 
     # try:
 
@@ -208,7 +243,7 @@ async def predict(file: UploadFile = File(...)):
     #     raise HTTPException(status_code=400, detail=f"Could not decode image: {e}")
 
     return {"prediction": disease_name,
-            #'disease_info':info
+            'disease_info':info
         }
 
 
